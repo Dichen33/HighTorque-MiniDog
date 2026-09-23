@@ -1,118 +1,162 @@
 <p align="center">
-  <img src="5.Images/V3.png" width="780" alt="HTDW4438-OpenDog CAD render" />
+  <img src="5.Images/V3.png" width="780" alt="HighTorque-MiniDog CAD render" />
 </p>
 
 <h1 align="center">HighTorque-MiniDog</h1>
 
 <p align="center">
-  <b>简体中文</b> | <a href="README_EN.md">English</a>
+  基于 HighTorque-MiniDog 的 URDF / MJCF 机器人模型，进行 MuJoCo 仿真、MJLab 强化学习环境搭建，以及四足机器人奖惩设置与步态学习的实验项目。
 </p>
 
 <p align="center">
-  独立开源四足机器人项目：硬件设计、URDF、实机 SDK 与 Sim2Real 协同开发
-</p>
-
-<p align="center">
-  <a href="https://github.com/Lain-Ego0/HTDW4438-OpenDog">主仓库（当前）</a> ·
-  <a href="https://github.com/Lain-Ego0/HTDW4438-sim2real">Sim2Real</a> ·
-  <a href="https://github.com/Lain-Ego0/HTDW4438_Isaacgym">Isaac Gym</a> ·
-  <a href="https://github.com/Lain-Ego0/HTDW4438_HIMloco">HIMloco</a> ·
-  <a href="https://github.com/Lain-Ego0/HTDW4438-AMP">AMP</a> ·
-  <a href="https://github.com/Lain-Ego0/LocoWiki">LocoWiki（资料）</a> ·
-  <a href="https://locowiki.github.io/">LocoWiki（网站）</a>
+  <b>中文</b> | <a href="README_EN.md">English</a>
 </p>
 
 ---
 
-## 目录
+## 项目简介
 
-- 项目定位
-- 仓库体系（1+4）
-- 本仓库内容
-- 快速开始
-- 推荐工作流
-- 说明与边界
+本仓库以 HighTorque-MiniDog 的 12 自由度点足四足机器人为基础，围绕以下目标进行整理和开发：
 
-## 项目定位
+- 将原始 URDF / 机器人资源导入 MuJoCo，维护可仿真的 MJCF 模型。
+- 搭建 MJLab + RSL-RL 风格的强化学习训练框架。
+- 学习和调试四足机器人强化学习中的观测维度、奖励项、惩罚项、地形课程和 play 可视化流程。
+- 通过 Zh-db 提供本地训练曲线查看、历史训练记录管理和训练结果分析。
 
-`HTDW4438` 是一只基于高擎**HTDW4438**超小高性能电机的i桌面级四足机器人。
+当前项目重点不是直接给出一个已经完全收敛的最终策略，而是作为 HighTorque-MiniDog 在 MuJoCo / MJLab 中进行强化学习实验、奖惩调参和训练流程管理的项目基础。
 
-`HTDW4438-OpenDog` 用于管理机器人本体相关资源，包括：
-
-- 机械与 URDF 资产
-- 实机控制 SDK 与脚本
-- 文档资料与参考论文
-
-如果你是第一次接触该项目，建议从当前主仓库 [`HTDW4438-OpenDog`](https://github.com/Lain-Ego0/HTDW4438-OpenDog) 开始。
-
-## 仓库体系（1+4）
-
-| 角色 | 仓库 | 用途 |
-|---|---|---|
-| 主仓库（当前） | [`HTDW4438-OpenDog`](https://github.com/Lain-Ego0/HTDW4438-OpenDog) | 机器人本体、URDF、实机 SDK 与工程资料 |
-| 附属仓库 | [`HTDW4438-sim2real`](https://github.com/Lain-Ego0/HTDW4438-sim2real) | Sim2Real 集成流程与部署链路 |
-| 附属仓库 | [`HTDW4438_Isaacgym`](https://github.com/Lain-Ego0/HTDW4438_Isaacgym) | Isaac Gym 训练框架与基础策略实验 |
-| 附属仓库 | [`HTDW4438_HIMloco`](https://github.com/Lain-Ego0/HTDW4438_HIMloco) | HIMloco 相关算法实验与实现 |
-| 附属仓库 | [`HTDW4438-AMP`](https://github.com/Lain-Ego0/HTDW4438-AMP) | AMP 相关运动先验与策略训练 |
-| 资料仓库（独立） | [`LocoWiki`](https://github.com/Lain-Ego0/LocoWiki) | 项目知识库、教程、经验沉淀与说明文档 |
-| 网站仓库（独立） | [`LocoWiki.github.io`](https://github.com/Lain-Ego0/LocoWiki.github.io) | LocoWiki 网站源码，对应站点：<https://locowiki.github.io/> |
-
-## 本仓库内容
+## 目录结构
 
 ```text
-HTDW4438-OpenDog
-├── 1.Hardware/
-│   ├── htdw_4438_urdf/               # 机器人 URDF 包（meshes/、urdf/、launch/）
-│   ├── HTDW4438-OpenDogV1.5/         # 结构迭代文件
-│   └── HTDW4438-OpenDog（URDF）/      # 历史/补充 URDF 资料
-├── 2.Software/
-│   └── livelybot_sdk/                # 实机 SDK 与常用脚本
-├── 3.Document/                       # 手册、资料、硬件文档
-├── 4.Paper/                          # 参考论文
-├── 5.Images/                         # 项目图片
-└── assets/                           # README 资源
+HighTorque-MiniDog/
+├─ 1.Hardware/
+│  ├─ htdw_4438_urdf/          # 原始机器人 URDF 与 mesh 资源
+│  └─ htdw_4438_mjcf/          # 从 URDF 转换整理得到的 MJCF 资源
+├─ mujoco/
+│  ├─ htdw_4438/               # MuJoCo 单机仿真、IK 控制、pygame 控制面板
+│  └─ mjlab/                   # MJLab 强化学习训练与 play 框架
+├─ Zh-db/                      # 本地训练曲线网页，可查看历史训练数据
+├─ scripts/                    # 根目录快捷启动脚本
+├─ 2.Software/                 # 原项目软件与 SDK 资料
+├─ 3.Document/                 # 参考文档
+├─ 4.Paper/                    # 相关论文资料
+└─ 5.Images/                   # 图片资源
 ```
+
+## MuJoCo 仿真
+
+MuJoCo 相关文件位于：
+
+```text
+mujoco/htdw_4438/
+```
+
+其中包含：
+
+- `htdw_4438.xml`：机器人 MJCF 模型。
+- `ik_control.py`：基于足端轨迹和 IK 的运动控制实验。
+- `pygame_control_panel.py`：stand / trot / lay / zero 以及速度滑杆 UI。
+- `stand_check.py`：站立姿态检查脚本。
+- `terrain_*.xml` / `*.hfield`：地形实验资源。
+
+## MJLab 强化学习
+
+MJLab 强化学习框架位于：
+
+```text
+mujoco/mjlab/
+```
+
+主要内容：
+
+- `minidog_native/`：原生 MJLab 风格任务、观测、奖励、机器人配置。
+- `legged_gym/`：兼容 legged_gym 风格的 train / play 入口。
+- `rsl_rl/`：RSL-RL 训练接口。
+- `TRAINING_TASKS.md`：训练命令、play 命令、奖励惩罚说明。
+- `OBSERVATION_GAIT_ANALYSIS.md`：观测维度和步态相关分析。
+- `NATIVE_MJLAB_RSL_RL.md`：原生 MJLab + RSL-RL 训练说明。
+
+任务配置采用类似下面的划分：
+
+```text
+Robot-Flat-v0
+Robot-Rough-v0
+Robot-Crawl-v0
+```
+
+地形、奖励项和课程学习尽量放在任务级配置中，而不是写死在单个 XML 文件里，方便对比平地、崎岖地形和低姿态通行等实验。
+
+## Zh-db 训练曲线查看
+
+Zh-db 位于：
+
+```text
+Zh-db/
+```
+
+它用于本地记录和查看训练曲线，目标是提供一个简化版的 wandb 风格界面：
+
+- 查看历史训练曲线。
+- 实时接收训练指标。
+- 点击曲线查看具体坐标数值。
+- 删除旧训练记录。
+- 导出曲线数据为 CSV。
+- 可接入 DeepSeek API 对训练结果做中文总结分析。
+
+本地训练数据默认保存在 `Zh-db/db-data/`，导出的 CSV 默认保存在 `Zh-db/db-download/`。这些目录属于本地运行数据，默认不会提交到 Git。
 
 ## 快速开始
 
-### 1) 获取仓库
+进入 MJLab 目录：
 
-```bash
-git clone https://github.com/Lain-Ego0/HTDW4438-OpenDog.git
-cd HTDW4438-OpenDog
+```bat
+cd /d D:\mujoco_test\HighTorque-MiniDog\mujoco\mjlab
 ```
 
-### 2) 查看 URDF 资产
+使用 uv 初始化环境：
 
-- URDF 主文件：`1.Hardware/htdw_4438_urdf/urdf/htdw_4438.urdf`
-- Mesh 目录：`1.Hardware/htdw_4438_urdf/meshes/`
-- Launch 文件：`1.Hardware/htdw_4438_urdf/launch/`
+```bat
+scripts\uv_setup_native.bat
+```
 
-### 3) 使用实机 SDK 脚本
+训练示例：
 
-- SDK 目录：`2.Software/livelybot_sdk/`
-- 常用脚本：
-  - `motor_set_zero.sh`：电机置零/标定
-  - `motor_move_zero.sh`：移动到零位
-  - `motor_feedback.sh`：反馈查看
-  - `canboard_update.sh`：CAN 板升级
-- 文档说明：
-  - `2.Software/livelybot_sdk/readme.md`
-  - `2.Software/livelybot_sdk/doc/yaml配置文件说明.md`
-  - `2.Software/livelybot_sdk/doc/机器人launch文件说明.md`
+```bat
+scripts\train_native.bat Robot-Rough-v0 --num_envs 2048 --max_iterations 2000 --run_name rough_v2
+```
 
-> 安全提示：上电、置零、联调前请先抬空机身并准备急停，避免误动作导致损坏。
+play 可视化示例：
 
-## 推荐工作流
+```bat
+scripts\play_native.bat Robot-Rough-v0 --run-name rough_v2 --checkpoint latest
+```
 
-1. 在本仓库维护机器人结构、URDF、基础参数与 SDK 资料。
-2. 在附属仓库（Isaac Gym / HIMloco / AMP）进行策略训练与对比实验。
-3. 在附属仓库 `HTDW4438-sim2real` 进行 Sim2Real 集成与部署落地。
-4. 在 `LocoWiki` 维护知识库内容，在 `LocoWiki.github.io` 维护网站发布相关内容。
+更完整的训练、play、奖励项和参数说明见：
 
-## 说明与边界
+```text
+mujoco/mjlab/TRAINING_TASKS.md
+```
 
-- 本仓库聚焦本体资产与资料管理，不承载全部训练管线。
-- 若跨仓库文档存在差异，以主仓库 `HTDW4438-OpenDog` 为准；部署细节可参考 `HTDW4438-sim2real`。
-- 知识类教程与经验沉淀优先维护在 `LocoWiki`，网站展示与发布在 `LocoWiki.github.io`（<https://locowiki.github.io/>）。
-- `3.Document/` 中可能包含供应链或第三方资料，仅用于工程备查，不代表项目来源平台。
+## 当前研究重点
+
+本项目当前主要关注：
+
+- 12 自由度串联点足机器人的默认站姿和关节零位定义。
+- 四足 trot 步态学习中的相位观测、足端摆动高度、足端打滑、接触节奏和腿部镜像约束。
+- rough 地形下的奖励权重、碰撞惩罚、非法接触、课程难度和训练稳定性。
+- MuJoCo 后端与 Isaac Gym / Isaac Lab 风格环境之间的差异。
+- 训练曲线的本地可视化、导出和 AI 总结分析。
+
+## Git 管理说明
+
+仓库只提交源码、模型描述文件、配置、文档和必要资源。
+
+以下内容默认不会提交：
+
+- Python 虚拟环境 `.venv/`
+- 训练日志 `logs/`、`runs/`、`wandb/`
+- 模型权重 `model/`、`*.pt`、`*.pth`
+- Zh-db 本地数据 `db-data/`、`db-download/`
+- 视频、缓存、临时文件和压缩备份
+
+这样可以让 GitHub 仓库保持适合项目管理和代码协作的状态。
