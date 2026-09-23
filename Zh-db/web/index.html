@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zh-db 训练可视化</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">Z</div>
+          <div>
+            <h1>Zh-db</h1>
+            <p>本地强化学习实验面板</p>
+          </div>
+        </div>
+
+        <div class="connection">
+          <span id="statusDot"></span>
+          <span id="statusText">正在连接 WebSocket</span>
+        </div>
+
+        <div class="side-head">
+          <h2>训练记录</h2>
+          <button id="refreshBtn" title="刷新训练列表">刷新</button>
+        </div>
+        <input id="runSearch" class="search" type="search" placeholder="搜索 run 名称" />
+        <div id="runList" class="run-list"></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">MJLab / HTDW4438 / PPO</p>
+            <h2 id="runTitle">请选择一次训练</h2>
+            <div id="runMeta" class="run-meta">等待数据</div>
+          </div>
+          <div class="actions">
+            <div class="segment" aria-label="横轴选择">
+              <button id="axisIterationBtn" class="active" type="button">轮次</button>
+              <button id="axisSampleBtn" type="button">样本</button>
+            </div>
+            <select id="metricFilter" title="筛选模块">
+              <option value="all">全部模块</option>
+            </select>
+            <button id="exportBtn" type="button">导出 CSV</button>
+            <button id="analyzeBtn">生成训练总结</button>
+          </div>
+        </header>
+
+        <section class="summary-grid">
+          <div class="stat">
+            <span>最后轮次</span>
+            <strong id="lastIteration">-</strong>
+          </div>
+          <div class="stat">
+            <span>总样本</span>
+            <strong id="lastStep">-</strong>
+          </div>
+          <div class="stat">
+            <span>平均奖励</span>
+            <strong id="lastReward">-</strong>
+          </div>
+          <div class="stat">
+            <span>速度误差</span>
+            <strong id="lastVelErr">-</strong>
+          </div>
+        </section>
+
+        <section id="charts" class="charts"></section>
+      </main>
+
+      <aside class="inspector">
+        <h2>训练总结</h2>
+        <div id="analysisBox" class="analysis empty">点击“生成训练总结”，这里会根据历史曲线生成中文诊断。</div>
+
+        <h2>数据状态</h2>
+        <div class="history-note">
+          页面通过 WebSocket 实时接收训练曲线，也会读取本地 <strong>Zh-db/db-data/runs</strong> 中保存的历史记录。
+          导出时会生成 meta 校验文件，包含源 JSON SHA256、CSV SHA256 和哈希链状态。
+        </div>
+        <div id="exportBox" class="export-box empty">导出的 CSV 会保存到 <strong>Zh-db/db-download</strong>。</div>
+
+        <h2>配置</h2>
+        <pre id="configBox" class="config-box">{}</pre>
+      </aside>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

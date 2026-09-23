@@ -1,0 +1,46 @@
+.vscode/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+
+# MJLab / training generated files
+.warp_cache/
+MUJOCO_LOG.TXT
+logs/
+runs/
+wandb/
+model/
+models/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+events.out.tfevents.*
+
+# Zh-db local runtime data and exports
+db-data/
+db-download/
+
+# Local media / temporary analysis output
+_tmp_video_frames/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Local compressed backups / generated archives
+*.zip
+*.7z
+*.rar
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
