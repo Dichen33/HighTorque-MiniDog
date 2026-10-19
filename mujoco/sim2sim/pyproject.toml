@@ -1,0 +1,15 @@
+[project]
+name = "minidog-sim2sim"
+version = "0.1.0"
+description = "MuJoCo sim2sim validation for the HTDW-4438 MiniDog"
+requires-python = ">=3.10"
+dependencies = [
+  "mujoco>=3.2",
+  "numpy>=1.24",
+  "torch>=2.4",
+  "pygame>=2.5",
+  "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false

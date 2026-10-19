@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
@@ -34,11 +35,16 @@ from mjlab.terrains import (
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
-from ..mdp.curriculums import terrain_levels_velocity
+from ..config.course_profiles import plum_course_terrain_generator
+from ..mdp.curriculums import terrain_levels_plum_obstacle_release, terrain_levels_velocity
 from ..mdp.rewards import (
     base_height_l2,
     contact_fraction_obs,
     contact_fraction_reward,
+    commanded_forward_motion,
+    commanded_forward_stall,
+    course_completion,
+    course_progress,
     diagonal_foot_symmetry,
     diagonal_leg_symmetry,
     feet_gait_consistency,
@@ -49,6 +55,7 @@ from ..mdp.rewards import (
     joint_deviation_l2,
     leg_mirror,
     lin_vel_z_l2,
+    plum_foothold,
     safe_base_lin_vel,
     safe_height_scan,
     stance_width,
@@ -56,6 +63,7 @@ from ..mdp.rewards import (
     stand_foot_geometry,
     stand_pose,
     stand_still,
+    gap_crossing,
     terrain_level_bonus,
     track_linear_velocity,
     track_yaw_velocity,
@@ -73,6 +81,33 @@ from ..robot_cfg import (
     THIGH_GEOM_PATTERNS,
 )
 from ..robot_cfg import get_robot_cfg, get_robot_crawl_cfg
+
+
+def _training_ccd_iterations(default: int = 80, play: bool = False) -> int:
+    """Allow a faster training collision setting without changing play/sim2sim."""
+    if play:
+        return default
+    raw = os.environ.get("MINIDOG_TRAIN_CCD_ITERATIONS")
+    if raw is None:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError as exc:
+        raise ValueError("MINIDOG_TRAIN_CCD_ITERATIONS must be a positive integer") from exc
+
+
+def _training_solver(play: bool = False) -> tuple[str, int, int]:
+    """Pick (solver, iterations, ls_iterations) for the contact solver.
+
+    MuJoCo's default is dense Newton with 100 iterations and 50 line-search
+    iterations.  That is the right setting for play and sim2sim fidelity but it
+    is the dominant per-substep cost in training, where the policy only needs a
+    consistent dynamics model.  Conjugate gradient at 30 iterations keeps
+    contacts stable at a fraction of the cost; play reuses the nominal values.
+    """
+    if play:
+        return "newton", 100, 50
+    return "cg", 30, 15
 
 
 def _foot_contact_sensor() -> ContactSensorCfg:
@@ -152,7 +187,8 @@ def _height_scan_sensor() -> RayCastSensorCfg:
     return RayCastSensorCfg(
         name="height_scanner",
         frame=ObjRef(type="body", name="base_link", entity="robot"),
-        pattern=GridPatternCfg(resolution=0.08, size=(1.4, 0.9)),
+        # Show enough of the forward route to detect the next block or wall.
+        pattern=GridPatternCfg(resolution=0.08, size=(2.4, 1.0)),
         ray_alignment="yaw",
         max_distance=3.0,
         exclude_parent_body=True,
@@ -164,7 +200,7 @@ def _height_scan_sensor() -> RayCastSensorCfg:
 def _make_base_env_cfg() -> ManagerBasedRlEnvCfg:
     joint_asset = SceneEntityCfg("robot", joint_names=LEG_JOINT_PATTERNS)
 
-    actor_terms = {
+    actor_proprio_terms = {
         "base_ang_vel": ObservationTermCfg(
             func=envs_mdp.base_ang_vel,
             scale=0.25,
@@ -202,8 +238,24 @@ def _make_base_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "actions": ObservationTermCfg(func=velocity_mdp.last_action, history_length=1),
     }
+    actor_radar_terms = {
+        "height_scan": ObservationTermCfg(
+            func=safe_height_scan,
+            params={
+                "sensor_name": "height_scanner",
+                # ODIN1 DTOF is approximately 10 Hz.  Noise and sparse
+                # dropouts are applied only to the actor stream; the critic
+                # below keeps a clean instantaneous scan.
+                "scan_update_hz": 10.0,
+                "noise_std": 0.03,
+                "dropout_prob": 0.04,
+            },
+            clip=(-1.0, 1.0),
+        ),
+    }
     critic_terms = {
-        **actor_terms,
+        **actor_proprio_terms,
+        **actor_radar_terms,
         "base_lin_vel": ObservationTermCfg(func=safe_base_lin_vel, scale=2.0),
         "foot_contact": ObservationTermCfg(
             func=contact_fraction_obs,
@@ -248,7 +300,10 @@ def _make_base_env_cfg() -> ManagerBasedRlEnvCfg:
             func=envs_mdp.reset_root_state_uniform,
             mode="reset",
             params={
-                "pose_range": {"z": (0.22, 0.28), "yaw": (-math.pi, math.pi)},
+                # init_state already places the base at STAND_HEIGHT. This is
+                # a small perturbation around that pose, not an additional
+                # absolute spawn height.
+                "pose_range": {"z": (-0.015, 0.015), "yaw": (-math.pi, math.pi)},
                 "velocity_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-0.1, 0.1)},
                 "asset_cfg": SceneEntityCfg("robot"),
             },
@@ -294,11 +349,17 @@ def _make_base_env_cfg() -> ManagerBasedRlEnvCfg:
         "lin_vel_z": RewardTermCfg(func=lin_vel_z_l2, weight=-0.2),
         "joint_torques": RewardTermCfg(func=envs_mdp.joint_torques_l2, weight=-2.0e-4),
         "joint_acc": RewardTermCfg(func=envs_mdp.joint_acc_l2, weight=-2.5e-7),
-        "action_rate": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.01),
+        # The Go2W action is an integrator (a_t = a_{t-1} + delta), so its
+        # per-step delta is naturally larger than a stateless policy's.  At
+        # -0.01 a healthy gait already paid -0.16/step and the diverged run paid
+        # -40/step, which dominated every positive term.
+        "action_rate": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.002),
         "joint_pos_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=-1.0),
         "stand_still": RewardTermCfg(func=stand_still, weight=-0.2, params={"command_name": "twist", "command_threshold": 0.08}),
         "feet_contact": RewardTermCfg(func=contact_fraction_reward, weight=0.2, params={"sensor_name": "feet_ground_contact"}),
-        "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-50.0),
+        # -50 against a ~16-step episode made the return roughly -3 per step, so
+        # the value target was dominated by the termination itself.
+        "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-15.0),
     }
 
     terminations = {
@@ -335,7 +396,20 @@ def _make_base_env_cfg() -> ManagerBasedRlEnvCfg:
         commands=commands,
         actions=actions,
         observations={
-            "actor": ObservationGroupCfg(terms=actor_terms, concatenate_terms=True, enable_corruption=True, history_length=6),
+            # Keep proprioception history separate from the current terrain map.
+            # The actor model uses the former as a temporal state encoder and
+            # the latter as an AME-style spatial input.
+            "actor_proprio": ObservationGroupCfg(
+                terms=actor_proprio_terms,
+                concatenate_terms=True,
+                enable_corruption=True,
+                history_length=6,
+            ),
+            "actor_radar": ObservationGroupCfg(
+                terms=actor_radar_terms,
+                concatenate_terms=True,
+                enable_corruption=True,
+            ),
             "critic": ObservationGroupCfg(terms=critic_terms, concatenate_terms=True, enable_corruption=False),
         },
         rewards=rewards,
@@ -356,7 +430,8 @@ def flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     if play:
         cfg.scene.num_envs = 1
         cfg.episode_length_s = int(1e9)
-        cfg.observations["actor"].enable_corruption = False
+        cfg.observations["actor_proprio"].enable_corruption = False
+        cfg.observations["actor_radar"].enable_corruption = False
         cfg.events.pop("push_robot", None)
         cfg.curriculum = {}
     return cfg
@@ -559,11 +634,23 @@ def rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     )
     cfg.events["push_robot"].interval_range_s = (6.0, 10.0)
     cfg.episode_length_s = 30.0
-    cfg.sim = SimulationCfg(contact_sensor_maxmatch=128, mujoco=MujocoCfg(impratio=100, cone="elliptic", ccd_iterations=80))
+    solver, solver_iterations, solver_ls_iterations = _training_solver(play=play)
+    cfg.sim = SimulationCfg(
+        contact_sensor_maxmatch=128,
+        mujoco=MujocoCfg(
+            impratio=100,
+            cone="elliptic",
+            solver=solver,
+            iterations=solver_iterations,
+            ls_iterations=solver_ls_iterations,
+            ccd_iterations=_training_ccd_iterations(play=play),
+        ),
+    )
     if play:
         cfg.scene.num_envs = 1
         cfg.episode_length_s = int(1e9)
-        cfg.observations["actor"].enable_corruption = False
+        cfg.observations["actor_proprio"].enable_corruption = False
+        cfg.observations["actor_radar"].enable_corruption = False
         cfg.events.pop("push_robot", None)
         cfg.curriculum = {}
         if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
@@ -585,4 +672,134 @@ def crawl_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards["joint_deviation"] = RewardTermCfg(func=joint_deviation_l2, weight=-0.4)
     cfg.terminations["bad_orientation"].params["limit_angle"] = math.radians(80.0)
     cfg.terminations.pop("base_ground_contact", None)
+    return cfg
+
+
+def plum_blossom_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+    """Directional obstacle task with a gated, reference-style terrain course."""
+    cfg = rough_env_cfg(play=play)
+    cfg.scene.terrain = TerrainEntityCfg(
+        terrain_type="generator",
+        terrain_generator=plum_course_terrain_generator(),
+        max_init_terrain_level=0,
+    )
+    if not play:
+        cfg.curriculum["terrain_levels"] = CurriculumTermCfg(
+            func=terrain_levels_plum_obstacle_release,
+            params={
+                "command_name": "twist",
+                "success_distance": 2.7,
+                "gap_success_distance": 3.35,
+                "fail_distance_ratio": 0.35,
+                "wall_success_distance": 4.80,
+                "default_success_distance": 4.0,
+            },
+        )
+    command = cfg.commands["twist"]
+    foot_asset = SceneEntityCfg("robot", body_names=FOOT_BODY_PATTERNS, preserve_order=True)
+    command.rel_standing_envs = 0.05
+    command.heading_command = False
+    command.ranges.heading = None
+    command.ranges.lin_vel_x = (0.18, 0.35)
+    command.ranges.lin_vel_y = (-0.04, 0.04)
+    command.ranges.ang_vel_z = (-0.20, 0.20)
+
+    # The course is directional. Randomizing yaw would spawn many robots facing
+    # away from the stepping stones and make curriculum progress ill-defined.
+    cfg.events["reset_base"].params["pose_range"]["yaw"] = (0.0, 0.0)
+
+    # Tighten velocity tracking and explicitly reject the stationary-policy
+    # solution that receives a high score at the lower end of the command range.
+    cfg.rewards["track_lin_vel"].params["std"] = 0.20
+    cfg.rewards["commanded_forward_motion"] = RewardTermCfg(
+        func=commanded_forward_motion,
+        weight=1.0,
+        params={"command_name": "twist", "command_threshold": 0.05, "min_command": 0.08},
+    )
+    cfg.rewards["commanded_forward_stall"] = RewardTermCfg(
+        func=commanded_forward_stall,
+        weight=-0.75,
+        params={"command_name": "twist", "command_threshold": 0.05, "min_command": 0.08},
+    )
+    cfg.rewards["course_progress"] = RewardTermCfg(
+        func=course_progress,
+        weight=0.08,
+        params={
+            "command_name": "twist",
+            "success_distance": 2.7,
+            "gap_success_distance": 3.35,
+            # FlatHighWallTerrainCfg starts at local x=1.5 and its last wall
+            # is centered at x=6.0. 4.8 m relative displacement is just beyond
+            # the final wall while remaining inside the 8 m terrain patch.
+            "wall_success_distance": 4.80,
+            "default_success_distance": 4.0,
+            "command_threshold": 0.05,
+        },
+    )
+    cfg.rewards["plum_foothold"] = RewardTermCfg(
+        func=plum_foothold,
+        weight=1.5,
+        params={
+            "sensor_name": "feet_ground_contact",
+            "asset_cfg": foot_asset,
+            "command_name": "twist",
+            "success_distance": 2.7,
+            "command_threshold": 0.05,
+            "course_start_difficulty": 0.15,
+            "block_size_range": (0.12, 0.36),
+            "block_height_range": (0.10, 0.32),
+            "platform_height": 0.28,
+            "top_tolerance": 0.055,
+            "max_vertical_speed": 0.50,
+        },
+    )
+    cfg.rewards["course_completion"] = RewardTermCfg(
+        func=course_completion,
+        weight=5.0,
+        params={
+            "command_name": "twist",
+            "success_distance": 2.7,
+            "gap_success_distance": 3.35,
+            "wall_success_distance": 4.80,
+            "default_success_distance": 4.0,
+            "command_threshold": 0.05,
+        },
+    )
+    cfg.rewards["gap_crossing"] = RewardTermCfg(
+        func=gap_crossing,
+        weight=4.0,
+        params={
+            "command_name": "twist",
+            "gap_success_distance": 3.35,
+            "command_threshold": 0.05,
+        },
+    )
+
+    # The terrain origin is the raised entrance platform. Reduce fixed-origin
+    # height pressure while the robot crosses the lower floor between blocks.
+    cfg.rewards["base_height"].weight = -0.35
+    cfg.rewards["stand_still"].weight = -0.80
+    cfg.rewards["stand_pose"].weight = -0.80
+    cfg.rewards["stand_contact"].weight = -1.00
+    cfg.rewards["stand_foot_geometry"].weight = -1.50
+    # The terrain level is a curriculum state, not a per-step objective.
+    cfg.rewards["terrain_level"].weight = 0.0
+    cfg.rewards["feet_gait_consistency"].weight = 0.20
+    cfg.rewards["diagonal_foot_symmetry"].weight = -0.08
+    cfg.rewards["foot_clearance"].weight = -1.2
+    cfg.rewards["foot_swing_height"].weight = -0.20
+    cfg.episode_length_s = 20.0
+    # Delay strong pushes until the policy has learned the course geometry.
+    # The inherited play configuration has already removed this event.
+    if not play:
+        cfg.events["push_robot"].interval_range_s = (12.0, 18.0)
+        cfg.events["push_robot"].params["velocity_range"] = {
+            "x": (-0.08, 0.08),
+            "y": (-0.08, 0.08),
+        }
+    if play:
+        cfg.events.pop("push_robot", None)
+        cfg.scene.terrain.terrain_generator.curriculum = False
+        cfg.scene.terrain.terrain_generator.num_rows = 5
+        cfg.scene.terrain.terrain_generator.num_cols = 1
     return cfg

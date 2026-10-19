@@ -24,10 +24,11 @@ native = ["mjlab[cu128]>=1.0.0"]
 
 [project.entry-points."mjlab.tasks"]
 minidog_native = "minidog_native"
+go2w_native = "go2w_native"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["minidog_rl*", "legged_gym*", "minidog_native*"]
+include = ["minidog_rl*", "legged_gym*", "minidog_native*", "go2w_native*"]
 
 [tool.uv]
 cache-dir = "D:\\uv"

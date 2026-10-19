@@ -36,6 +36,11 @@ def get_spec() -> mujoco.MjSpec:
     spec = mujoco.MjSpec.from_file(str(ROBOT_XML))
     for actuator in list(spec.actuators):
         spec.delete(actuator)
+    # The source XML keyframe contains the original 12 motor controls.  The
+    # native MJLab entity adds its own actuators, so keep the pose but remove
+    # the stale control vector before compiling the spec.
+    for key in spec.keys:
+        key.ctrl = []
     return spec
 
 
